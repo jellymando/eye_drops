@@ -2,15 +2,6 @@
 
 안약넣기 앱
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+- 마지막 안약 넣은 시간 기록 + 날짜별로 그룹핑
+- 오전 10시~오후 7시까지 20분마다 인공눈물 넣으라고 푸시 알림
+  
