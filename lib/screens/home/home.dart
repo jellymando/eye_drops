@@ -8,6 +8,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_background_service_android/flutter_background_service_android.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../../models/dataMap.dart';
+import '../popup/settingPopup.dart';
 
 class Home extends StatefulWidget {
   const Home({super.key});
@@ -19,6 +20,9 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   late SharedPreferences _prefs;
   late DataMap _dataMap = DataMap({});
+  int _settedStartHour = 9;
+  int _settedEndHour = 18;
+
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
@@ -32,10 +36,8 @@ class _HomeState extends State<Home> {
   Future<void> initializeService() async {
     final service = FlutterBackgroundService();
     await service.configure(
-      iosConfiguration: IosConfiguration(
-        autoStart: true,
-        onForeground: onStart,
-      ),
+      iosConfiguration:
+          IosConfiguration(autoStart: true, onForeground: onStart),
       androidConfiguration: AndroidConfiguration(
         onStart: onStart,
         isForegroundMode: true, //false 시 백그라운드모드
@@ -48,6 +50,31 @@ class _HomeState extends State<Home> {
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
         ?.requestNotificationsPermission();
+    FlutterBackgroundService().startService();
+
+    Timer.periodic(const Duration(minutes: 20), (timer) async {
+      DateTime now = DateTime.now();
+      int hour = now.hour;
+      int? startHour = _prefs.getInt('settedStartHour') ?? _settedStartHour;
+      int? endHour = _prefs.getInt('settedEndHour') ?? _settedEndHour;
+
+      // 설정된 시간에만 푸시 알림
+      if (hour >= startHour && hour < endHour) {
+        flutterLocalNotificationsPlugin.show(
+          1,
+          '안약 넣을 시간👀🕒',
+          '인공눈물 넣을 시간이에용',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'my_foreground',
+              'MY FOREGROUND SERVICE',
+              icon: 'ic_bg_service_small',
+              ongoing: true,
+            ),
+          ),
+        );
+      }
+    });
   }
 
   static Future<void> onStart(ServiceInstance service) async {
@@ -56,35 +83,14 @@ class _HomeState extends State<Home> {
 
     final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
         FlutterLocalNotificationsPlugin();
-
-    // bring to foreground
-    Timer.periodic(const Duration(minutes: 20), (timer) async {
-      if (service is AndroidServiceInstance) {
-        DateTime now = DateTime.now();
-        int hour = now.hour;
-        // 오전 10시~오후 7시까지만 알림 노출
-        if (hour >= 10 && hour < 19) {
-          flutterLocalNotificationsPlugin.show(
-            1,
-            '안약 넣을 시간👀🕒',
-            '인공눈물 넣을 시간이에용',
-            const NotificationDetails(
-              android: AndroidNotificationDetails(
-                'my_foreground',
-                'MY FOREGROUND SERVICE',
-                icon: 'ic_bg_service_small',
-                ongoing: true,
-              ),
-            ),
-          );
-        }
-      }
-    });
   }
 
   Future<void> _loadData() async {
     _prefs = await SharedPreferences.getInstance();
     String? jsonData = _prefs.getString('dataMap');
+    int? settedStartHour = _prefs.getInt('settedStartHour');
+    int? settedEndHour = _prefs.getInt('settedEndHour');
+
     if (jsonData != null) {
       setState(() {
         _dataMap = DataMap.fromJson(jsonDecode(jsonData));
@@ -92,6 +98,13 @@ class _HomeState extends State<Home> {
     } else {
       setState(() {
         _dataMap = DataMap({});
+      });
+    }
+
+    if (settedStartHour != null && settedEndHour != null) {
+      setState(() {
+        _settedStartHour = settedStartHour;
+        _settedEndHour = settedEndHour;
       });
     }
   }
@@ -119,8 +132,6 @@ class _HomeState extends State<Home> {
 
     String jsonData = jsonEncode(_dataMap.toJson());
     await _prefs.setString('dataMap', jsonData);
-
-    FlutterBackgroundService().startService();
   }
 
   Future<void> _removeData() async {
@@ -128,62 +139,91 @@ class _HomeState extends State<Home> {
     await _loadData();
   }
 
+  Future<void> _saveSettedHour(startHour, endHour) async {
+    setState(() {
+      _settedStartHour = startHour;
+      _settedEndHour = endHour;
+    });
+    await _prefs.setInt('settedStartHour', startHour);
+    await _prefs.setInt('settedEndHour', endHour);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
         appBar: AppBar(title: const Text('안약 넣을 시간👀🕒'), actions: <Widget>[
-          IconButton(
-              icon: const Icon(Icons.highlight_remove), onPressed: _removeData)
+          PopupMenuButton(
+              itemBuilder: (BuildContext context) => [
+                    PopupMenuItem(
+                        child: TextButton(
+                            child: const Text('설정'),
+                            onPressed: () {
+                              showDialog(
+                                context: context,
+                                builder: (BuildContext context) {
+                                  return SettingPopup(
+                                    initialStartHour: _settedStartHour,
+                                    initialEndHour: _settedEndHour,
+                                    onSave: (startHour, endHour) =>
+                                        _saveSettedHour(startHour, endHour),
+                                  );
+                                },
+                              );
+                            })),
+                    PopupMenuItem(
+                      child: TextButton(
+                        child: const Text('초기화'),
+                        onPressed: _removeData,
+                      ),
+                    ),
+                  ]),
         ]),
-        body: Center(
-          child: ListView(
-            padding: const EdgeInsets.all(20),
-            children: _dataMap.dataMap.entries.toList().reversed.map((entry) {
-              String date = entry.key;
-              List<DataItem> items = entry.value;
-              return Column(
-                children: [
-                  Container(
-                    padding: EdgeInsets.symmetric(vertical: 5, horizontal: 20),
-                    decoration: BoxDecoration(
-                      color: Colors.cyan[200],
-                      borderRadius: BorderRadius.circular(10),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.3),
-                          spreadRadius: 2,
-                          blurRadius: 5,
-                          offset: Offset(0, 3),
+        body: ListView(
+          padding: const EdgeInsets.all(20),
+          children: _dataMap.dataMap.entries.toList().reversed.map((entry) {
+            String date = entry.key;
+            List<DataItem> items = entry.value;
+            return Column(
+              children: [
+                Container(
+                  padding: EdgeInsets.symmetric(vertical: 5, horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.cyan[200],
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.3),
+                        spreadRadius: 2,
+                        blurRadius: 5,
+                        offset: Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Text(date,
+                      style: TextStyle(fontSize: 18, color: Colors.white)),
+                ), // Display the date
+                ...items.map((item) => Column(
+                      children: [
+                        SizedBox(height: 20),
+                        Row(
+                          children: <Widget>[
+                            item.type == '1'
+                                ? Icon(Icons.medication,
+                                    color: Colors.pink[300])
+                                : item.type == '2'
+                                    ? Icon(Icons.medication, color: Colors.grey)
+                                    : Icon(Icons.water_drop_outlined,
+                                        color: Colors.lightBlue[300]),
+                            SizedBox(width: 7),
+                            Text(item.time, style: TextStyle(fontSize: 18)),
+                          ],
                         ),
                       ],
-                    ),
-                    child: Text(date,
-                        style: TextStyle(fontSize: 18, color: Colors.white)),
-                  ), // Display the date
-                  ...items.map((item) => Column(
-                        children: [
-                          SizedBox(height: 20),
-                          Row(
-                            children: <Widget>[
-                              item.type == '1'
-                                  ? Icon(Icons.medication,
-                                      color: Colors.pink[300])
-                                  : item.type == '2'
-                                      ? Icon(Icons.medication,
-                                          color: Colors.grey)
-                                      : Icon(Icons.water_drop_outlined,
-                                          color: Colors.lightBlue[300]),
-                              SizedBox(width: 7),
-                              Text(item.time, style: TextStyle(fontSize: 18)),
-                            ],
-                          ),
-                        ],
-                      )),
-                  SizedBox(height: 20),
-                ],
-              );
-            }).toList(),
-          ),
+                    )),
+                SizedBox(height: 20),
+              ],
+            );
+          }).toList(),
         ),
         bottomNavigationBar: BottomAppBar(
           height: 100,
